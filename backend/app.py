@@ -1,284 +1,234 @@
-from init_db_schema import init_db_schema
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
 import os
 import logging
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, timedelta
-from queue import Queue
-from threading import Lock
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 from contextlib import contextmanager
+from queue import Queue
+from jwt import (JWT,jwk_from_dict)
+from jwt.utils import get_int_from_datetime
 
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+# Initialize Flask app
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 
-# Configure session cookie settings
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE='None',
-    SESSION_COOKIE_HTTPONLY=True,
-    PERMANENT_SESSION_LIFETIME=timedelta(days=7)
-)
+instance = JWT()
 
-# Configure CORS with credentials support
+# CORS configuration
 CORS(app, 
-     supports_credentials=True,
      resources={
          r"/*": {
              "origins": "*",
-             "methods": ["GET", "POST", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"]
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
          }
      })
 
-@app.after_request
-def after_request(response):
-    # Enable credentials in CORS headers
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
+# Logging configuration
+logging.basicConfig(
+    filename='app.log', 
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
-# Set up logging
-logging.basicConfig(filename='chatbot.log', level=logging.INFO)
-
-# Connection pool configuration
+# Database connection pool
+DATABASE_PATH = 'ecommerce.db'
 POOL_SIZE = 5
 connection_pool = Queue(maxsize=POOL_SIZE)
-pool_lock = Lock()
 
 def init_connection_pool():
-    """Initialize the connection pool with multiple database connections"""
     for _ in range(POOL_SIZE):
-        conn = sqlite3.connect('ecommerce.db', check_same_thread=False)
+        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         connection_pool.put(conn)
 
 @contextmanager
 def get_db_connection():
-    """Context manager for handling database connections from the pool"""
-    connection = None
+    """Provides a database connection from the pool."""
+    conn = connection_pool.get()
     try:
-        connection = connection_pool.get()
-        yield connection
-        connection.commit()
+        yield conn
+        conn.commit()
     except Exception as e:
-        if connection:
-            connection.rollback()
+        conn.rollback()
         raise e
     finally:
-        if connection:
-            connection_pool.put(connection)
+        connection_pool.put(conn)
 
-def execute_db_operation(operation, params=None, fetchall=False, fetchone=False):
-    """Execute a database operation with proper connection handling"""
+def execute_query(query, params=None, fetchall=False, fetchone=False):
+    """Executes a database query with optional fetch."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        if params:
-            cursor.execute(operation, params)
-        else:
-            cursor.execute(operation)
-            
+        cursor.execute(query, params or [])
         if fetchall:
             return cursor.fetchall()
-        elif fetchone:
+        if fetchone:
             return cursor.fetchone()
-        return cursor
 
+# Token-based authentication
+def token_required(f):
+    @wraps(f)
+    def decorator(*args, **kwargs):
+        token = request.headers.get('Authorization', None)
+        signing_key = jwk_from_dict({'kty': 'oct', 'k': app.config['SECRET_KEY']})
+        if not token:
+            return jsonify({"success": False, "message": "Token is missing"}), 401
+        try:
+            decoded = instance.decode(token, signing_key, algorithms=["HS256"])
+            request.user_id = decoded['user_id']
+        except instance.ExpiredSignatureError:
+            return jsonify({"success": False, "message": "Token has expired"}), 401
+        except instance.InvalidTokenError:
+            return jsonify({"success": False, "message": "Invalid token"}), 401
+        return f(*args, **kwargs)
+    return decorator
+
+# Generate JWT token
+def generate_token(user_id):
+    payload = {
+        'user_id': user_id,
+        'exp': get_int_from_datetime(datetime.now(timezone.utc) + timedelta(days=7))
+    }
+    # print(payload)
+    signing_key = jwk_from_dict({'kty': 'oct', 'k': app.config['SECRET_KEY']})
+    # print(signing_key)
+    return instance.encode(payload, signing_key, alg="HS256")
+
+# Routes
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    data = request.get_json()
+    username, password = data.get('username'), data.get('password')
     
     if not username or not password:
-        return jsonify({"success": False, "message": "Username and password are required"}), 400
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
     
     try:
-        # Check if username exists
-        existing_user = execute_db_operation(
-            "SELECT * FROM users WHERE username = ?", 
-            (username,), 
-            fetchone=True
-        )
-        
-        if existing_user:
+        if execute_query("SELECT 1 FROM users WHERE username = ?", (username,), fetchone=True):
             return jsonify({"success": False, "message": "Username already exists"}), 400
         
-        # Insert new user
         hashed_password = generate_password_hash(password)
-        execute_db_operation(
-            "INSERT INTO users (username, password) VALUES (?, ?)",
-            (username, hashed_password)
-        )
-        
-        logging.info(f"New user registered: {username}")
+        execute_query("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
         return jsonify({"success": True, "message": "User registered successfully"}), 201
-        
     except Exception as e:
-        logging.error(f"Error during registration: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred during registration"}), 500
+        logging.error(f"Registration error: {str(e)}")
+        return jsonify({"success": False, "message": "Registration failed"}), 500
 
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    data = request.get_json()
+    username, password = data.get('username'), data.get('password')
+    
+    if not username or not password:
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
     
     try:
-        user = execute_db_operation(
-            "SELECT * FROM users WHERE username = ?",
-            (username,),
-            fetchone=True
-        )
-        
+        user = execute_query("SELECT * FROM users WHERE username = ?", (username,), fetchone=True)
         if user and check_password_hash(user['password'], password):
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            logging.info(f"User logged in: {username}")
-            return jsonify({"success": True, "message": "Logged in successfully"})
-        else:
-            return jsonify({"success": False, "message": "Invalid credentials"}), 401
-            
+            token = generate_token(user['id'])
+            return jsonify({"success": True, "token": token, "user": user['username']}), 200
+        
+        return jsonify({"success": False, "message": "Invalid credentials"}), 401
     except Exception as e:
-        logging.error(f"Error during login: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred during login"}), 500
-
-@app.route('/logout', methods=['POST'])
-def logout():
-    username = session.get('username')
-    session.clear()
-    logging.info(f"User logged out: {username}")
-    return jsonify({"success": True, "message": "Logged out successfully"})
+        logging.error(f"Login error: {str(e)}")
+        return jsonify({"success": False, "message": "Login failed"}), 500
 
 @app.route('/search', methods=['GET'])
+@token_required
 def search_products():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "User not authenticated"}), 401
-    
     query = request.args.get('q', '')
     category = request.args.get('category', '')
-    min_price = request.args.get('min_price', 0)
-    max_price = request.args.get('max_price', float('inf'))
+    min_price = float(request.args.get('min_price', 0))
+    max_price = float(request.args.get('max_price', float('inf')))
     
     try:
         sql = """
-        SELECT * FROM products 
-        WHERE (name LIKE ? OR description LIKE ?) 
-        AND (? = '' OR category = ?)
-        AND price >= ? AND price <= ?
+        SELECT * FROM products WHERE 
+        (name LIKE ? OR description LIKE ?) AND 
+        (? = '' OR category = ?) AND 
+        price BETWEEN ? AND ?
         """
-        products = execute_db_operation(
-            sql,
-            ('%' + query + '%', '%' + query + '%', 
-             category, category, 
-             min_price, max_price),
-            fetchall=True
-        )
-        
-        logging.info(f"Search performed: query='{query}', category='{category}', price range={min_price}-{max_price}")
-        return jsonify([dict(product) for product in products])
-        
+        products = execute_query(sql, (f'%{query}%', f'%{query}%', category, category, min_price, max_price), fetchall=True)
+        return jsonify([dict(row) for row in products])
     except Exception as e:
-        logging.error(f"Error during product search: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred during product search"}), 500
+        logging.error(f"Search error: {str(e)}")
+        return jsonify({"success": False, "message": "Search failed"}), 500
 
 @app.route('/purchase', methods=['POST'])
+@token_required
 def purchase():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "User not authenticated"}), 401
-    
-    data = request.json
+    data = request.get_json()
     product_id = data.get('product_id')
+    
+    if not product_id:
+        return jsonify({"success": False, "message": "Missing product ID"}), 400
     
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Start transaction
             cursor.execute("BEGIN TRANSACTION")
             
-            # Check if product exists and is in stock
-            cursor.execute("SELECT * FROM products WHERE id = ? AND stock > 0", (product_id,))
-            product = cursor.fetchone()
-            
+            # Check stock
+            product = cursor.execute("SELECT * FROM products WHERE id = ? AND stock > 0", (product_id,)).fetchone()
             if not product:
                 cursor.execute("ROLLBACK")
                 return jsonify({"success": False, "message": "Product not available"}), 400
             
-            # Update stock with proper locking
-            cursor.execute("UPDATE products SET stock = stock - 1 WHERE id = ? AND stock > 0", (product_id,))
+            # Update stock and record purchase
+            cursor.execute("UPDATE products SET stock = stock - 1 WHERE id = ?", (product_id,))
+            cursor.execute("INSERT INTO purchases (user_id, product_id, purchase_time) VALUES (?, ?, ?)",
+                           (request.user_id, product_id, datetime.now()))
             
-            if cursor.rowcount == 0:
-                cursor.execute("ROLLBACK")
-                return jsonify({"success": False, "message": "Product out of stock"}), 400
-            
-            # Record purchase
-            purchase_time = datetime.now().isoformat()
-            cursor.execute(
-                "INSERT INTO purchases (user_id, product_id, purchase_time) VALUES (?, ?, ?)",
-                (session['user_id'], product_id, purchase_time)
-            )
-            
-            # Commit transaction
             cursor.execute("COMMIT")
-            
-            logging.info(f"Purchase made: user_id={session['user_id']}, product_id={product_id}")
-            return jsonify({"success": True, "message": f"Purchase successful for product ID: {product_id}"})
-            
+            return jsonify({"success": True, "message": "Purchase successful"}), 200
     except Exception as e:
-        logging.error(f"Error during purchase: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred during purchase"}), 500
+        logging.error(f"Purchase error: {str(e)}")
+        return jsonify({"success": False, "message": "Purchase failed"}), 500
 
 @app.route('/chat_history', methods=['GET'])
+@token_required
 def get_chat_history():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "User not authenticated"}), 401
-    
     try:
-        history = execute_db_operation(
-            "SELECT * FROM chat_history WHERE user_id = ? ORDER BY timestamp",
-            (session['user_id'],),
-            fetchall=True
-        )
-        
-        return jsonify([dict(message) for message in history])
-        
+        history = execute_query("SELECT * FROM chat_history WHERE user_id = ? ORDER BY timestamp", 
+                                (request.user_id,), fetchall=True)
+        return jsonify([dict(row) for row in history])
     except Exception as e:
-        logging.error(f"Error retrieving chat history: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred while retrieving chat history"}), 500
+        logging.error(f"Chat history error: {str(e)}")
+        return jsonify({"success": False, "message": "Failed to retrieve chat history"}), 500
 
 @app.route('/save_chat', methods=['POST'])
+@token_required
 def save_chat():
-    if 'user_id' not in session:
-        return jsonify({"success": False, "message": "User not authenticated"}), 401
+    data = request.get_json()
+    message, sender = data.get('message'), data.get('sender')
     
-    data = request.json
-    message = data.get('message')
-    sender = data.get('sender')
+    if not message or not sender:
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
     
     try:
-        execute_db_operation(
-            "INSERT INTO chat_history (user_id, message, sender, timestamp) VALUES (?, ?, ?, ?)",
-            (session['user_id'], message, sender, datetime.now().isoformat())
-        )
-        
+        execute_query("INSERT INTO chat_history (user_id, message, sender, timestamp) VALUES (?, ?, ?, ?)",
+                      (request.user_id, message, sender, datetime.now()))
         return jsonify({"success": True, "message": "Chat message saved successfully"})
-        
     except Exception as e:
-        logging.error(f"Error saving chat message: {str(e)}")
-        return jsonify({"success": False, "message": "An error occurred while saving the chat message"}), 500
+        logging.error(f"Save chat error: {str(e)}")
+        return jsonify({"success": False, "message": "Failed to save chat message"}), 500
 
-# Add this to your main application right before the init_connection_pool() call:
-# if __name__ == '__main__':
-#     init_db_schema()  # Initialize schema first
-#     init_connection_pool()  # Then initialize connection pool
-#     app.run(debug=True)
+# Error handler
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error(f"Unhandled error: {str(e)}")
+    return jsonify({"success": False, "message": "An unexpected error occurred"}), 500
 
-
-# Initialize the connection pool when the application starts
+# Initialize app
 init_connection_pool()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False, host='0.0.0.0', port=5000)

@@ -2,29 +2,21 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { backendURL } from '@/lib/config';
+import { useAuth } from '@/contexts/AuthContext';
 
-export const Register: React.FC<{ onRegister: () => void }> = ({ onRegister }) => {
+export const Register: React.FC<{ onRegister: () => void }> = () => {
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
+	const { register } = useAuth();
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch(`${backendURL}/register`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ username, password }),
-			});
-			if (response.ok) {
-				alert('Registration successful. Please login.');
-				onRegister();
-			} else {
-				alert('Registration failed');
-			}
+			await register(username, password);
+			// alert('Registration successful. Please login.');
 		} catch (error) {
 			console.error('Registration error:', error);
-			alert('Registration failed');
+			// alert('Registration failed');
 		}
 	};
 

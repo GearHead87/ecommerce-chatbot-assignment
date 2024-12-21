@@ -17,6 +17,7 @@ import { Login } from '@/components/Login';
 import { Register } from '@/components/Register';
 import { useAuth } from '@/contexts/AuthContext';
 import { backendURL } from '@/lib/config';
+import { MessageType } from '@/lib/types';
 
 interface Message {
 	id: number;
@@ -42,14 +43,14 @@ export default function Home() {
 	const [priceRange, setPriceRange] = useState<number[]>([0, 1000]);
 	const [showRegister, setShowRegister] = useState(false);
 	const scrollAreaRef = useRef<HTMLDivElement>(null);
-	const { user, logout } = useAuth();
+	const { user, logout, token } = useAuth();
 
 	useEffect(() => {
 		if (user) {
 			setMessages([
 				{
 					id: 0,
-					text: `Welcome back, ${user}! How can I assist you today?`,
+					text: `Welcome back, ${user.username}! How can I assist you today?`,
 					sender: 'bot',
 					timestamp: new Date().toISOString(),
 				},
@@ -67,12 +68,14 @@ export default function Home() {
 	const fetchChatHistory = async () => {
 		try {
 			const response = await fetch(`${backendURL}/chat_history`, {
-				credentials: 'include',
+				headers: {
+					Authorization: `${token}`,
+				},
 			});
 			const data = await response.json();
 			if (Array.isArray(data)) {
 				setMessages(
-					data.map((msg: any, index: number) => ({
+					data.map((msg: MessageType, index: number) => ({
 						id: index,
 						text: msg.message,
 						sender: msg.sender,
@@ -93,9 +96,9 @@ export default function Home() {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
+					Authorization: `${token}`,
 				},
 				body: JSON.stringify({ message, sender }),
-				credentials: 'include',
 			});
 		} catch (error) {
 			console.error('Error saving chat message:', error);
@@ -122,7 +125,9 @@ export default function Home() {
 					input
 				)}&category=${category}&min_price=${priceRange[0]}&max_price=${priceRange[1]}`,
 				{
-					credentials: 'include',
+					headers: {
+						Authorization: `${token}`,
+					},
 				}
 			);
 			const data = await response.json();
@@ -158,9 +163,9 @@ export default function Home() {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
+					Authorization: `${token}`,
 				},
 				body: JSON.stringify({ product_id: productId }),
-				credentials: 'include',
 			});
 			const data = await response.json();
 			if (data.success) {
@@ -211,10 +216,6 @@ export default function Home() {
 
 	const handleLogout = async () => {
 		try {
-			await fetch(`${backendURL}/logout`, {
-				method: 'POST',
-				credentials: 'include',
-			});
 			logout();
 			setMessages([]);
 			setProducts([]);
