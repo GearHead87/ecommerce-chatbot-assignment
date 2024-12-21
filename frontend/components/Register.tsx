@@ -22,11 +22,11 @@ export const Register: React.FC<{ onRegister: () => void }> = () => {
 
 	return (
 		<Card className="w-full max-w-md">
-			<CardHeader>
-				<CardTitle>Register</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<form onSubmit={handleSubmit}>
+			<form onSubmit={handleSubmit}>
+				<CardHeader>
+					<CardTitle>Register</CardTitle>
+				</CardHeader>
+				<CardContent>
 					<div className="space-y-4">
 						<Input
 							type="text"
@@ -43,13 +43,13 @@ export const Register: React.FC<{ onRegister: () => void }> = () => {
 							required
 						/>
 					</div>
-				</form>
-			</CardContent>
-			<CardFooter>
-				<Button type="submit" onClick={handleSubmit}>
-					Register
-				</Button>
-			</CardFooter>
+				</CardContent>
+				<CardFooter>
+					<Button type="submit" onClick={handleSubmit}>
+						Register
+					</Button>
+				</CardFooter>
+			</form>
 		</Card>
 	);
 };

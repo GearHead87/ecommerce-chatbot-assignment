@@ -23,11 +23,11 @@ export const Login: React.FC = () => {
 
 	return (
 		<Card className="w-full max-w-md">
-			<CardHeader>
-				<CardTitle>Login</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<form onSubmit={handleSubmit}>
+			<form onSubmit={handleSubmit}>
+				<CardHeader>
+					<CardTitle>Login</CardTitle>
+				</CardHeader>
+				<CardContent>
 					<div className="space-y-4">
 						<Input
 							type="text"
@@ -44,13 +44,13 @@ export const Login: React.FC = () => {
 							required
 						/>
 					</div>
-				</form>
-			</CardContent>
-			<CardFooter>
-				<Button type="submit" onClick={handleSubmit}>
-					Login
-				</Button>
-			</CardFooter>
+				</CardContent>
+				<CardFooter>
+					<Button type="submit" onClick={handleSubmit}>
+						Login
+					</Button>
+				</CardFooter>
+			</form>
 		</Card>
 	);
 };
