@@ -43,7 +43,7 @@ export default function Home() {
 	const [priceRange, setPriceRange] = useState<number[]>([0, 1000]);
 	const [showRegister, setShowRegister] = useState(false);
 	const scrollAreaRef = useRef<HTMLDivElement>(null);
-	const { user, logout, token } = useAuth();
+	const { user, logout, token, loading } = useAuth();
 
 	useEffect(() => {
 		if (user) {
@@ -225,6 +225,14 @@ export default function Home() {
 			console.error('Error logging out:', error);
 		}
 	};
+
+	if (loading) {
+		return (
+			<main className="flex min-h-screen flex-col items-center justify-center">
+				<div>Loading...</div>
+			</main>
+		);
+	}
 
 	if (!user) {
 		return (
