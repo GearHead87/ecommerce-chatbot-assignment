@@ -10,7 +10,7 @@ venv/
 *.log
 
 # Databases
-*.db
+# *.db
 
 # Environment variables
 .env

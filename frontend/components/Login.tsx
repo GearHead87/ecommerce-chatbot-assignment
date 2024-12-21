@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { backendURL } from '@/lib/config';
 
 export const Login: React.FC = () => {
 	const [username, setUsername] = useState('');
@@ -12,7 +13,7 @@ export const Login: React.FC = () => {
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch('http://localhost:5000/login', {
+			const response = await fetch(`${backendURL}/login`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ username, password }),

@@ -16,6 +16,7 @@ import { Slider } from '@/components/ui/slider';
 import { Login } from '@/components/Login';
 import { Register } from '@/components/Register';
 import { useAuth } from '@/contexts/AuthContext';
+import { backendURL } from '@/lib/config';
 
 interface Message {
 	id: number;
@@ -65,7 +66,7 @@ export default function Home() {
 
 	const fetchChatHistory = async () => {
 		try {
-			const response = await fetch('http://localhost:5000/chat_history', {
+			const response = await fetch(`${backendURL}/chat_history`, {
 				credentials: 'include',
 			});
 			const data = await response.json();
@@ -88,7 +89,7 @@ export default function Home() {
 
 	const saveChat = async (message: string, sender: 'user' | 'bot') => {
 		try {
-			await fetch('http://localhost:5000/save_chat', {
+			await fetch(`${backendURL}/save_chat`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -117,7 +118,7 @@ export default function Home() {
 
 		try {
 			const response = await fetch(
-				`http://localhost:5000/search?q=${encodeURIComponent(
+				`${backendURL}/search?q=${encodeURIComponent(
 					input
 				)}&category=${category}&min_price=${priceRange[0]}&max_price=${priceRange[1]}`,
 				{
@@ -153,7 +154,7 @@ export default function Home() {
 
 	const handlePurchase = async (productId: number) => {
 		try {
-			const response = await fetch('http://localhost:5000/purchase', {
+			const response = await fetch(`${backendURL}/purchase`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -210,7 +211,7 @@ export default function Home() {
 
 	const handleLogout = async () => {
 		try {
-			await fetch('http://localhost:5000/logout', {
+			await fetch(`${backendURL}/logout`, {
 				method: 'POST',
 				credentials: 'include',
 			});

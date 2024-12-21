@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { backendURL } from '@/lib/config';
 
 export const Register: React.FC<{ onRegister: () => void }> = ({ onRegister }) => {
 	const [username, setUsername] = useState('');
@@ -10,7 +11,7 @@ export const Register: React.FC<{ onRegister: () => void }> = ({ onRegister }) =
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		try {
-			const response = await fetch('http://localhost:5000/register', {
+			const response = await fetch(`${backendURL}/register`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ username, password }),
