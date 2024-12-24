@@ -221,6 +221,10 @@ def save_chat():
         logging.error(f"Save chat error: {str(e)}")
         return jsonify({"success": False, "message": "Failed to save chat message"}), 500
 
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({"success": True, "message": "Welcome to backend"}), 200
+
 # Error handler
 @app.errorhandler(Exception)
 def handle_exception(e):
